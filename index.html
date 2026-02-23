@@ -3,103 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>硬件分拣助手 v3.1</title>
+    <title>硬件分拣助手 v4.1</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
-        :root { --primary: #00ff00; --bg: #121212; --card: #252525; }
+        :root { --primary: #00d1ff; --bg: #0f172a; --card: #1e293b; }
         body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; }
-        #webcam-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.6; }
+        #webcam-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.4; }
         canvas { width: 100%; height: 100%; object-fit: cover; }
-
+        #version-tag { position: fixed; top: 10px; left: 10px; z-index: 100; font-size: 10px; color: #64748b; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 10px; }
+        
         #ui-layer { position: relative; z-index: 2; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; }
         
-        /* 版本号水印 */
-        #version-tag {
-            position: fixed; top: 10px; left: 10px; z-index: 100;
-            font-size: 10px; color: rgba(255,255,255,0.4);
-            background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;
-        }
+        /* 顶部管理按钮 */
+        .top-nav { position: fixed; top: 10px; right: 10px; z-index: 100; }
+        .btn-manage { background: rgba(255,255,255,0.1); color: white; border: 1px solid #444; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; }
 
-        #result-panel { 
-            margin: 20px; background: var(--card); border-radius: 20px; 
-            padding: 20px; border: 2px solid #444; box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
-        }
-        #result-panel.locked { border-color: var(--primary); }
-
-        .label-title { font-size: 1.5rem; font-weight: bold; color: var(--primary); display: flex; justify-content: space-between; }
-        .guide-box { margin: 15px 0; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 10px; border-left: 4px solid #ffcc00; }
+        #result-panel { margin: 20px; background: var(--card); border-radius: 24px; padding: 20px; border: 1px solid #334155; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .label-title { font-size: 1.5rem; font-weight: 800; color: #f8fafc; margin-bottom: 10px; }
+        .guide-box { margin: 12px 0; padding: 12px; background: rgba(15, 23, 42, 0.7); border-radius: 12px; border-left: 4px solid var(--primary); }
         
         .btn-group { display: flex; gap: 10px; margin-top: 15px; }
-        button { flex: 1; padding: 12px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; }
-        .btn-main { background: var(--primary); color: black; }
-        .btn-sub { background: #444; color: white; }
+        button { flex: 1; padding: 12px; border-radius: 12px; border: none; font-weight: 600; cursor: pointer; }
+        .btn-main { background: var(--primary); color: #0f172a; }
+        .btn-sub { background: #334155; color: white; }
 
-        #edit-modal { 
-            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: #333; padding: 25px; z-index: 100; border-radius: 20px; width: 80%;
-        }
-        input { width: 100%; padding: 10px; margin: 10px 0; background: #222; border: 1px solid #555; color: white; border-radius: 5px; }
+        /* 规则编辑器弹窗 */
+        #rule-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 200; overflow-y: auto; padding: 20px; box-sizing: border-box; }
+        .rule-item { background: #1e293b; padding: 15px; border-radius: 15px; margin-bottom: 10px; border: 1px solid #334155; }
+        input { width: 100%; padding: 10px; margin: 5px 0; background: #0f172a; border: 1px solid #444; color: white; border-radius: 8px; box-sizing: border-box; }
     </style>
 </head>
 <body>
-
-    <div id="version-tag">VER: 3.1.20240520</div>
+    <div id="version-tag">VER: 4.1.20260223</div>
+    
+    <div class="top-nav">
+        <button class="btn-manage" onclick="openRules()">⚙️ 分类管理</button>
+    </div>
 
     <div id="webcam-container"></div>
 
     <div id="ui-layer">
         <div id="result-panel">
-            <div class="label-title">
-                <span id="labelName">识别中...</span>
-                <span id="probTag" style="font-size: 0.8rem; color: #888;">0%</span>
-            </div>
+            <div id="status-row" style="color: #64748b; font-size: 0.8rem;">智能分拣模式已开启</div>
+            <div class="label-title" id="labelName">等待识别...</div>
             
             <div class="guide-box">
-                <div style="font-size: 0.8rem; color: #aaa;">收纳地址：</div>
-                <div id="posText">等待锁定...</div>
+                <div style="font-size: 0.7rem; color: #64748b; margin-bottom: 4px;">自动匹配位置：</div>
+                <div id="posText" style="color: #00d1ff; font-weight: bold;">-</div>
             </div>
 
             <div id="actionArea" style="display: none;">
-                <div style="font-size: 0.8rem; color: #aaa; margin-bottom: 5px;">预设打印内容：</div>
-                <div id="printPreview" style="background:#000; padding:10px; font-family:monospace; margin-bottom:15px; border:1px dashed #666;"></div>
                 <div class="btn-group">
                     <button class="btn-main" onclick="copyPrintContent()">复制标签</button>
-                    <button class="btn-sub" onclick="openEditModal()">修改配置</button>
-                    <button class="btn-sub" style="flex:0.5" onclick="resetLock()">重试</button>
+                    <button class="btn-sub" onclick="resetLock()">重试</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="edit-modal">
-        <h3>配置收纳指引</h3>
-        <p id="modal-item-name" style="color:var(--primary)"></p>
-        <input type="text" id="input-pos" placeholder="输入收纳位置 (如：A柜-03盒)">
-        <input type="text" id="input-tag" placeholder="输入打印简称 (如：STM32核心板)">
-        <div class="btn-group">
-            <button class="btn-main" onclick="saveConfig()">保存配置</button>
-            <button class="btn-sub" onclick="closeEditModal()">取消</button>
-        </div>
+    <div id="rule-modal">
+        <h2>分类规则管理</h2>
+        <p style="color: #94a3b8; font-size: 0.8rem;">当识别到名称包含关键词时，自动分配位置。</p>
+        <div id="rules-list"></div>
+        <button class="btn-main" onclick="addRule()" style="margin-top: 10px; width:100%">+ 添加新分类</button>
+        <button class="btn-sub" onclick="saveRules()" style="margin-top: 20px; width:100%; background: #00d1ff; color: #000;">保存并返回</button>
     </div>
 
     <script>
-        // 逻辑部分保持 v3.0 稳定版，仅修正 UI 显示
         const URL = "https://teachablemachine.withgoogle.com/models/vldTQXnhJ/";
-        let model, webcam, isLocked = false, currentClass = "";
-        let localData = JSON.parse(localStorage.getItem('hardware_config') || '{}');
+        let model, webcam, isLocked = false;
+        
+        // 默认规则（如果手机里没存过）
+        let myRules = JSON.parse(localStorage.getItem('sorting_rules')) || [
+            { name: "核心板", keywords: "STM32,Arduino,ESP32", pos: "A区-01盒" },
+            { name: "手机设备", keywords: "Phone,iPhone,手机", pos: "D区-设备架" }
+        ];
 
         async function init() {
-            try {
-                model = await tmImage.load(URL + "model.json", URL + "metadata.json");
-                webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, flip = false);
-                await webcam.setup({ facingMode: "environment" });
-                await webcam.play();
-                document.getElementById("webcam-container").appendChild(webcam.canvas);
-                window.requestAnimationFrame(loop);
-            } catch (e) {
-                document.getElementById("labelName").innerText = "加载失败，请检查HTTPS";
-            }
+            model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+            webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, false);
+            await webcam.setup({ facingMode: "environment" });
+            await webcam.play();
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            window.requestAnimationFrame(loop);
         }
 
         async function loop() {
@@ -112,8 +99,7 @@
 
         async function predict() {
             const prediction = await model.predict(webcam.canvas);
-            let maxP = 0;
-            let match = "";
+            let maxP = 0, match = "";
             for (let i = 0; i < model.getTotalClasses(); i++) {
                 if (prediction[i].probability > maxP) {
                     maxP = prediction[i].probability;
@@ -121,52 +107,74 @@
                 }
             }
             if (maxP > 0.90 && match !== "Background") {
-                document.getElementById("labelName").innerText = match;
-                document.getElementById("probTag").innerText = Math.round(maxP*100) + "%";
-                currentClass = match;
-                lockResult();
+                lockResult(match);
             }
         }
 
-        function lockResult() {
+        function lockResult(name) {
             isLocked = true;
-            const config = localData[currentClass] || { pos: "尚未配置位置", tag: currentClass };
-            document.getElementById("posText").innerText = config.pos;
-            document.getElementById("printPreview").innerText = `名称：${config.tag}\n地址：${config.pos}`;
-            document.getElementById("result-panel").classList.add("locked");
+            document.getElementById("labelName").innerText = name;
+            
+            // 自动匹配规则
+            let foundPos = "Z区-待分类";
+            for (let rule of myRules) {
+                let ks = rule.keywords.split(',');
+                if (ks.some(k => name.toLowerCase().includes(k.trim().toLowerCase()))) {
+                    foundPos = rule.pos;
+                    break;
+                }
+            }
+            
+            document.getElementById("posText").innerText = foundPos;
             document.getElementById("actionArea").style.display = "block";
-            if (navigator.vibrate) navigator.vibrate(50);
+            if (navigator.vibrate) navigator.vibrate(100);
         }
 
         function resetLock() {
             isLocked = false;
-            document.getElementById("result-panel").classList.remove("locked");
             document.getElementById("actionArea").style.display = "none";
-            document.getElementById("labelName").innerText = "识别中...";
+            document.getElementById("labelName").innerText = "等待识别...";
+            document.getElementById("posText").innerText = "-";
         }
 
-        function openEditModal() {
-            document.getElementById("modal-item-name").innerText = "正在配置：" + currentClass;
-            const config = localData[currentClass] || { pos: "", tag: currentClass };
-            document.getElementById("input-pos").value = config.pos;
-            document.getElementById("input-tag").value = config.tag;
-            document.getElementById("edit-modal").style.display = "block";
+        /* 规则编辑器逻辑 */
+        function openRules() {
+            const list = document.getElementById("rules-list");
+            list.innerHTML = "";
+            myRules.forEach((rule, index) => {
+                list.innerHTML += `
+                    <div class="rule-item">
+                        <input type="text" value="${rule.name}" placeholder="分类名(如: 手机)" onchange="updateRule(${index}, 'name', this.value)">
+                        <input type="text" value="${rule.keywords}" placeholder="关键词(用逗号隔开)" onchange="updateRule(${index}, 'keywords', this.value)">
+                        <input type="text" value="${rule.pos}" placeholder="收纳位置" onchange="updateRule(${index}, 'pos', this.value)">
+                        <button onclick="deleteRule(${index})" style="background:none; color:#ff4444; font-size:0.7rem; padding:5px;">删除此规则</button>
+                    </div>`;
+            });
+            document.getElementById("rule-modal").style.display = "block";
         }
 
-        function closeEditModal() { document.getElementById("edit-modal").style.display = "none"; }
+        function addRule() {
+            myRules.push({ name: "", keywords: "", pos: "" });
+            openRules();
+        }
 
-        function saveConfig() {
-            const pos = document.getElementById("input-pos").value;
-            const tag = document.getElementById("input-tag").value;
-            localData[currentClass] = { pos, tag };
-            localStorage.setItem('hardware_config', JSON.stringify(localData));
-            closeEditModal();
-            lockResult();
+        function updateRule(index, key, value) { myRules[index][key] = value; }
+
+        function deleteRule(index) {
+            myRules.splice(index, 1);
+            openRules();
+        }
+
+        function saveRules() {
+            localStorage.setItem('sorting_rules', JSON.stringify(myRules));
+            document.getElementById("rule-modal").style.display = "none";
+            alert("设置已保存！重新识别即可生效。");
         }
 
         function copyPrintContent() {
-            const content = document.getElementById("printPreview").innerText;
-            navigator.clipboard.writeText(content).then(() => alert("打印内容已复制！"));
+            const name = document.getElementById("labelName").innerText;
+            const pos = document.getElementById("posText").innerText;
+            navigator.clipboard.writeText(`名称：${name}\n位置：${pos}`).then(() => alert("已复制！"));
         }
 
         window.onload = init;
