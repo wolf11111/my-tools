@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>硬件分拣助手 v5.0</title>
+    <title>硬件分拣助手 v5.1</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
@@ -15,42 +15,46 @@
         #ui-layer { position: absolute; bottom: 0; left: 0; width: 100%; z-index: 2; padding-bottom: env(safe-area-inset-bottom); }
         .top-nav { position: fixed; top: 10px; right: 10px; z-index: 100; display: flex; gap: 10px; }
         
-        #result-panel { margin: 12px; background: var(--card); border-radius: 20px; padding: 18px; border: 1px solid rgba(0,255,136,0.2); backdrop-filter: blur(15px); }
-        .item-photo-preview { width: 60px; height: 60px; border-radius: 10px; border: 2px solid var(--primary); object-fit: cover; margin-right: 12px; display: none; }
+        #result-panel { margin: 12px; background: var(--card); border-radius: 20px; padding: 18px; border: 1px solid rgba(0,255,136,0.3); backdrop-filter: blur(15px); }
         
-        /* 画廊弹窗 */
-        #gallery-modal { display:none; position:fixed; inset:0; background:#0f172a; z-index:300; padding:20px; overflow-y:auto; }
-        .inventory-card { background:#1e293b; border-radius:15px; padding:12px; margin-bottom:12px; display:flex; align-items:center; }
-        .inventory-img { width:80px; height:80px; border-radius:10px; object-fit:cover; margin-right:15px; }
+        /* 入库下拉框样式 */
+        .pos-selector { width: 100%; padding: 12px; background: #0f172a; color: var(--primary); border: 1px solid var(--primary); border-radius: 10px; margin: 10px 0; font-weight: bold; font-size: 1rem; }
 
-        button { padding: 10px 15px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; }
-        .btn-main { background: var(--primary); color: #064e3b; }
+        /* 库存画廊 & 大图模式 */
+        #gallery-modal, #zoom-modal { display:none; position:fixed; inset:0; background:#0f172a; z-index:300; padding:20px; overflow-y:auto; }
+        #zoom-modal { z-index: 400; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; padding: 0; }
+        #zoom-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+        .inventory-card { background:#1e293b; border-radius:15px; padding:12px; margin-bottom:12px; display:flex; align-items:center; }
+        .inventory-img { width:70px; height:70px; border-radius:10px; object-fit:cover; margin-right:15px; border: 1px solid #444; }
+
+        button { padding: 10px 15px; border-radius: 12px; border: none; font-weight: bold; }
+        .btn-main { background: var(--primary); color: #064e3b; width: 100%; }
         .btn-sub { background: #334155; color: #fff; }
         #version-tag { position: fixed; top: 10px; left: 10px; z-index: 100; font-size: 10px; color: #00ff88; }
     </style>
 </head>
 <body>
-    <div id="version-tag">VER: 5.0.20260223</div>
+    <div id="version-tag">VER: 5.1.20260223</div>
     
     <div class="top-nav">
-        <button class="btn-sub" onclick="openGallery()" style="font-size:0.8rem">📦 查看库存</button>
-        <button class="btn-sub" onclick="openRules()" style="font-size:0.8rem">⚙️ 规划</button>
+        <button class="btn-sub" onclick="openGallery()">📦 库存检索</button>
     </div>
 
     <div id="webcam-container"></div>
 
     <div id="ui-layer">
         <div id="result-panel">
-            <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                <canvas id="snapshot-canvas" style="width:60px; height:60px; border-radius:8px; display:none; border:2px solid var(--primary)"></canvas>
-                <div>
-                    <div id="labelName" style="font-size: 1.2rem; font-weight: bold;">等待识别...</div>
-                    <div id="posText" style="color: var(--primary); font-size: 0.9rem;">-</div>
-                </div>
-            </div>
-
+            <div id="labelName" style="font-size: 1.3rem; font-weight: bold; margin-bottom: 5px;">正在识别...</div>
+            
             <div id="actionArea" style="display: none;">
-                <button class="btn-main" style="width:100%" onclick="confirmAndCapture()">拍照并确认入库</button>
+                <div style="font-size: 0.75rem; color: #8894aa;">请确认存放位置：</div>
+                <select id="manualPos" class="pos-selector">
+                    <option value="柜子B-中层">柜子B-中层 (推荐)</option>
+                    <option value="柜子B-上层">柜子B-上层</option>
+                    <option value="临时转运区">临时转运区</option>
+                </select>
+                <button class="btn-main" onclick="confirmAndCapture()">拍照并入库</button>
                 <button class="btn-sub" style="width:100%; margin-top:8px;" onclick="resetLock()">重试</button>
             </div>
         </div>
@@ -58,19 +62,21 @@
 
     <div id="gallery-modal">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-            <h2 style="margin:0; color:var(--primary)">库存快照检索</h2>
+            <h2 style="margin:0; color:var(--primary)">库存记录</h2>
             <button onclick="document.getElementById('gallery-modal').style.display='none'" class="btn-sub">返回</button>
         </div>
         <div id="gallery-list"></div>
     </div>
 
+    <div id="zoom-modal" onclick="this.style.display='none'">
+        <img id="zoom-img" src="">
+        <div style="position:absolute; bottom:30px; color:#fff; background:rgba(0,0,0,0.5); padding:10px 20px; border-radius:20px;">点击任意位置退出预览</div>
+    </div>
+
     <script>
         const URL = "https://teachablemachine.withgoogle.com/models/vldTQXnhJ/";
-        let model, webcam, isLocked = false, currentMatchRule = null;
-        
-        // 核心数据：存放在 localStorage
+        let model, webcam, isLocked = false;
         let inventory = JSON.parse(localStorage.getItem('hardware_inventory_v5')) || [];
-        let myRules = JSON.parse(localStorage.getItem('sorting_rules_v4.4')) || [];
 
         async function init() {
             model = await tmImage.load(URL + "model.json", URL + "metadata.json");
@@ -94,67 +100,63 @@
             }
             if (maxP > 0.92 && match !== "Background") {
                 isLocked = true;
-                currentMatchRule = myRules.find(r => r.keywords.split(',').some(k => match.toLowerCase().includes(k.trim().toLowerCase())));
-                showMatch(match);
+                document.getElementById("labelName").innerText = match;
+                document.getElementById("actionArea").style.display = "block";
+                if (navigator.vibrate) navigator.vibrate(50);
             }
         }
 
-        function showMatch(name) {
-            document.getElementById("labelName").innerText = name;
-            document.getElementById("posText").innerText = currentMatchRule ? currentMatchRule.pos : "柜子B-中层 (建议)";
-            document.getElementById("actionArea").style.display = "block";
-        }
-
-        // --- 核心：入库并拍照 ---
         function confirmAndCapture() {
-            // 1. 截取当前摄像头画面
             const snapCanvas = document.createElement('canvas');
             snapCanvas.width = webcam.canvas.width;
             snapCanvas.height = webcam.canvas.height;
             snapCanvas.getContext('2d').drawImage(webcam.canvas, 0, 0);
-            const photoData = snapCanvas.toDataURL('image/jpeg', 0.5); // 压缩质量0.5减少内存占用
-
-            // 2. 保存到库存记录
+            
             const newItem = {
                 name: document.getElementById("labelName").innerText,
-                pos: document.getElementById("posText").innerText,
+                pos: document.getElementById("manualPos").value,
                 time: new Date().toLocaleString(),
-                photo: photoData
+                photo: snapCanvas.toDataURL('image/jpeg', 0.5)
             };
-            inventory.unshift(newItem); // 最新存入的放前面
+            
+            inventory.unshift(newItem);
             localStorage.setItem('hardware_inventory_v5', JSON.stringify(inventory));
-
-            alert("入库成功！照片已关联。");
+            alert("入库成功！");
             resetLock();
         }
 
         function openGallery() {
             const list = document.getElementById("gallery-list");
-            list.innerHTML = inventory.length ? "" : "<p style='color:#666'>暂无库存，请先入库。</p>";
+            list.innerHTML = inventory.length ? "" : "<p style='color:#666'>空空如也...</p>";
             inventory.forEach((item, index) => {
                 list.innerHTML += `
                     <div class="inventory-card">
-                        <img src="${item.photo}" class="inventory-img">
-                        <div style="flex:1">
+                        <img src="${item.photo}" class="inventory-img" onclick="zoomImage('${item.photo}')">
+                        <div style="flex:1" onclick="zoomImage('${item.photo}')">
                             <div style="font-weight:bold; color:var(--primary)">${item.name}</div>
-                            <div style="font-size:0.8rem; margin:4px 0;">📍 ${item.pos}</div>
-                            <div style="font-size:0.6rem; color:#666;">时间: ${item.time}</div>
+                            <div style="font-size:0.85rem; margin:2px 0;">📍 ${item.pos}</div>
+                            <div style="font-size:0.6rem; color:#666;">${item.time}</div>
                         </div>
-                        <button onclick="deleteItem(${index})" style="background:none; color:#ff4444; font-size:0.7rem;">移除</button>
+                        <button onclick="deleteItem(${index})" style="background:none; color:#ff4444; font-size:1.2rem;">×</button>
                     </div>`;
             });
             document.getElementById("gallery-modal").style.display = "block";
         }
 
+        function zoomImage(src) {
+            document.getElementById("zoom-img").src = src;
+            document.getElementById("zoom-modal").style.display = "flex";
+        }
+
         function deleteItem(index) {
-            if(confirm("确定移除该物品记录吗？")) {
+            if(confirm("确定删除记录？")) {
                 inventory.splice(index, 1);
                 localStorage.setItem('hardware_inventory_v5', JSON.stringify(inventory));
                 openGallery();
             }
         }
 
-        function resetLock() { isLocked = false; document.getElementById("actionArea").style.display = "none"; document.getElementById("labelName").innerText = "扫描中..."; }
+        function resetLock() { isLocked = false; document.getElementById("actionArea").style.display = "none"; document.getElementById("labelName").innerText = "正在扫描..."; }
         window.onload = init;
     </script>
 </body>
