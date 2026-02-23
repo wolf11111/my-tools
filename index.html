@@ -3,157 +3,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>硬件分拣助手 v1.0</title>
+    <title>硬件分拣助手 Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
-        body { margin: 0; background: #000; color: white; font-family: -apple-system, sans-serif; overflow: hidden; }
+        :root { --primary: #00ff00; --bg: #121212; --card: #1e1e1e; }
+        body { margin: 0; background: var(--bg); color: white; font-family: -apple-system, sans-serif; overflow: hidden; }
         
-        /* 视频容器：全屏置底 */
-        #webcam-container {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 1;
-        }
-        canvas { width: 100%; height: 100%; object-fit: cover; }
+        /* 视频背景 */
+        #webcam-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        canvas { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
 
-        /* UI 遮罩层：置顶 */
-        #ui-overlay {
-            position: relative;
-            z-index: 2;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(0,0,0,0.2);
-            pointer-events: none;
-        }
-
-        #header { padding: 20px; background: rgba(0,0,0,0.5); width: 100%; text-align: center; }
+        /* UI层 */
+        #ui-layer { position: relative; z-index: 2; height: 100vh; display: flex; flex-direction: column; }
         
-        /* 识别结果显示区 */
-        #result-card {
-            background: rgba(255, 255, 255, 0.9);
-            color: #333;
-            margin-bottom: 50px;
-            padding: 20px 40px;
-            border-radius: 50px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            text-align: center;
-            pointer-events: auto;
-            transition: all 0.3s;
-        }
+        /* 顶部状态条 */
+        .nav { display: flex; justify-content: space-around; background: rgba(0,0,0,0.8); padding: 15px 0; }
+        .nav button { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 5px 15px; border-radius: 15px; }
+        .nav button.active { background: var(--primary); color: black; }
 
-        #label { font-size: 2rem; font-weight: bold; display: block; }
-        #probability { font-size: 0.9rem; color: #666; }
+        /* 结果卡片 */
+        #result-panel { 
+            margin: auto 20px 40px; background: var(--card); border-radius: 20px; 
+            padding: 20px; border: 2px solid #333; transition: all 0.3s;
+        }
+        #result-panel.locked { border-color: var(--primary); box-shadow: 0 0 20px rgba(0,255,0,0.3); }
 
-        /* 扫描动画 */
-        .scanner-line {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 2px;
-            background: rgba(0, 255, 0, 0.5);
-            box-shadow: 0 0 15px #0f0;
-            animation: scan 3s infinite linear;
-            z-index: 1;
+        .label-text { font-size: 1.8rem; font-weight: bold; color: var(--primary); margin-bottom: 5px; }
+        .guide-text { color: #ffcc00; font-size: 1.1rem; margin-bottom: 15px; display: block; }
+        
+        .copy-btn { 
+            width: 100%; background: #333; color: white; border: none; padding: 12px; 
+            border-radius: 10px; font-size: 1rem; display: none; 
         }
-        @keyframes scan {
-            0% { top: 0%; }
-            100% { top: 100%; }
-        }
+        .copy-btn:active { background: #555; }
+
+        /* 扫描动画线 */
+        .scan-line { position: absolute; top: 0; width: 100%; height: 2px; background: var(--primary); animation: move 3s infinite linear; z-index: 1; }
+        @keyframes move { from {top:0%} to {top:100%} }
+
+        /* 隐藏设置页逻辑 */
+        #settings-page { display: none; padding: 20px; background: var(--bg); height: 100%; overflow-y: auto; }
     </style>
 </head>
 <body>
 
     <div id="webcam-container"></div>
-    <div class="scanner-line"></div>
+    <div class="scan-line" id="scanLine"></div>
 
-    <div id="ui-overlay">
-        <div id="header">
-            <h3>硬件分拣 AI 助手</h3>
+    <div id="ui-layer">
+        <div class="nav">
+            <button id="btn-scan" class="active" onclick="showPage('scan')">识别模式</button>
+            <button id="btn-learn" onclick="window.open('https://teachablemachine.withgoogle.com/projects/','_blank')">学习新种类</button>
         </div>
-        
-        <div id="result-card">
-            <span id="label">正在启动模型...</span>
-            <span id="probability">请允许摄像头访问</span>
+
+        <div id="result-panel">
+            <div id="status-tag" style="font-size: 0.8rem; color: #888; margin-bottom: 5px;">正在扫描...</div>
+            <div class="label-text" id="labelName">等待物体...</div>
+            <div class="guide-text" id="guideText">请对准元器件</div>
+            <button class="copy-btn" id="copyBtn" onclick="copyToClipboard()">复制打印内容</button>
+            <button class="copy-btn" id="resetBtn" style="margin-top:10px; background:none; border:1px solid #555;" onclick="resetLock()">重置扫描</button>
         </div>
     </div>
 
-    <script type="text/javascript">
-        // 你的模型链接
+    <script>
         const URL = "https://teachablemachine.withgoogle.com/models/vldTQXnhJ/";
+        
+        // --- 收纳指引数据表 (在这里修改你的分类逻辑) ---
+        const GUIDE_MAP = {
+            "STM32": "位置：A柜-01盒 (开发板类)",
+            "OLED屏幕": "位置：B柜-05盒 (显示模组)",
+            "传感器": "位置：C柜-02盒 (通用传感器)",
+            "Background": "状态：未发现物体"
+        };
 
-        let model, webcam, labelContainer, maxPredictions;
+        let model, webcam, isLocked = false, lastResult = "";
+        let lockTimer = 0;
 
         async function init() {
-            const modelURL = URL + "model.json";
-            const metadataURL = URL + "metadata.json";
-
-            try {
-                // 加载模型
-                model = await tmImage.load(modelURL, metadataURL);
-                maxPredictions = model.getTotalClasses();
-
-                // 摄像头配置
-                const flip = false; // 后置摄像头不需要镜像
-                const width = window.innerWidth;
-                const height = window.innerHeight;
-                
-                webcam = new tmImage.Webcam(width, height, flip);
-                
-                // 关键：请求后置摄像头
-                await webcam.setup({ facingMode: "environment" }); 
-                
-                await webcam.play();
-                window.requestAnimationFrame(loop);
-
-                // 将摄像头画面渲染到容器
-                document.getElementById("webcam-container").appendChild(webcam.canvas);
-                document.getElementById("label").innerHTML = "准备扫描";
-            } catch (error) {
-                console.error(error);
-                document.getElementById("label").innerHTML = "启动失败";
-                document.getElementById("probability").innerHTML = "请检查 HTTPS 环境或摄像头权限";
-            }
+            model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+            webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, false);
+            await webcam.setup({ facingMode: "environment" });
+            await webcam.play();
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            window.requestAnimationFrame(loop);
         }
 
         async function loop() {
-            webcam.update(); 
-            await predict();
+            if (!isLocked) {
+                webcam.update();
+                await predict();
+            }
             window.requestAnimationFrame(loop);
         }
 
         async function predict() {
-            // 预测
             const prediction = await model.predict(webcam.canvas);
-            
-            // 找到置信度最高的分类
-            let maxProb = 0;
-            let bestClass = "";
+            let highestProb = 0;
+            let currentMatch = "";
 
-            for (let i = 0; i < maxPredictions; i++) {
-                if (prediction[i].probability > maxProb) {
-                    maxProb = prediction[i].probability;
-                    bestClass = prediction[i].className;
+            for (let i = 0; i < model.getTotalClasses(); i++) {
+                if (prediction[i].probability > highestProb) {
+                    highestProb = prediction[i].probability;
+                    currentMatch = prediction[i].className;
                 }
             }
 
-            // UI 更新策略：置信度需大于 85%
-            const labelEl = document.getElementById("label");
-            const probEl = document.getElementById("probability");
-
-            if (maxProb > 0.85) {
-                labelEl.innerHTML = bestClass;
-                probEl.innerHTML = "匹配度: " + (maxProb * 100).toFixed(1) + "%";
-                labelEl.style.color = "#008000";
-            } else {
-                labelEl.innerHTML = "扫描中...";
-                probEl.innerHTML = "请对准物体";
-                labelEl.style.color = "#666";
+            if (highestProb > 0.90 && currentMatch !== "Background") {
+                if (currentMatch === lastResult) {
+                    lockTimer++;
+                    if (lockTimer > 30) { // 连续识别约1.5秒则锁定
+                        lockResult(currentMatch);
+                    }
+                } else {
+                    lockTimer = 0;
+                }
+                lastResult = currentMatch;
+                updateUI(currentMatch, highestProb);
             }
         }
 
-        // 自动启动
+        function updateUI(name, prob) {
+            document.getElementById("labelName").innerHTML = name;
+            document.getElementById("guideText").innerHTML = GUIDE_MAP[name] || "位置：未知，请先归类";
+        }
+
+        function lockResult(name) {
+            isLocked = true;
+            document.getElementById("status-tag").innerHTML = "🔒 已锁定结果";
+            document.getElementById("status-tag").style.color = "#00ff00";
+            document.getElementById("result-panel").classList.add("locked");
+            document.getElementById("scanLine").style.display = "none";
+            document.getElementById("copyBtn").style.display = "block";
+            document.getElementById("resetBtn").style.display = "block";
+            
+            // 自动震动反馈
+            if (navigator.vibrate) navigator.vibrate(100);
+        }
+
+        function resetLock() {
+            isLocked = false;
+            lockTimer = 0;
+            document.getElementById("status-tag").innerHTML = "正在扫描...";
+            document.getElementById("status-tag").style.color = "#888";
+            document.getElementById("result-panel").classList.remove("locked");
+            document.getElementById("scanLine").style.display = "block";
+            document.getElementById("copyBtn").style.display = "none";
+            document.getElementById("resetBtn").style.display = "none";
+        }
+
+        function copyToClipboard() {
+            const text = document.getElementById("labelName").innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                alert("已复制: " + text + "。请去打印机App粘贴。");
+            });
+        }
+
         window.onload = init;
     </script>
 </body>
