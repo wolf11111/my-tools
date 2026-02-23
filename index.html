@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>硬件分拣助手 v3.0 (配置增强版)</title>
+    <title>硬件分拣助手 v3.1</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
@@ -12,10 +12,15 @@
         #webcam-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.6; }
         canvas { width: 100%; height: 100%; object-fit: cover; }
 
-        /* UI层 */
         #ui-layer { position: relative; z-index: 2; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; }
         
-        /* 核心卡片 */
+        /* 版本号水印 */
+        #version-tag {
+            position: fixed; top: 10px; left: 10px; z-index: 100;
+            font-size: 10px; color: rgba(255,255,255,0.4);
+            background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;
+        }
+
         #result-panel { 
             margin: 20px; background: var(--card); border-radius: 20px; 
             padding: 20px; border: 2px solid #444; box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
@@ -25,13 +30,11 @@
         .label-title { font-size: 1.5rem; font-weight: bold; color: var(--primary); display: flex; justify-content: space-between; }
         .guide-box { margin: 15px 0; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 10px; border-left: 4px solid #ffcc00; }
         
-        /* 按钮组 */
         .btn-group { display: flex; gap: 10px; margin-top: 15px; }
         button { flex: 1; padding: 12px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; }
         .btn-main { background: var(--primary); color: black; }
         .btn-sub { background: #444; color: white; }
 
-        /* 弹窗样式 */
         #edit-modal { 
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #333; padding: 25px; z-index: 100; border-radius: 20px; width: 80%;
@@ -40,6 +43,8 @@
     </style>
 </head>
 <body>
+
+    <div id="version-tag">VER: 3.1.20240520</div>
 
     <div id="webcam-container"></div>
 
@@ -79,19 +84,22 @@
     </div>
 
     <script>
+        // 逻辑部分保持 v3.0 稳定版，仅修正 UI 显示
         const URL = "https://teachablemachine.withgoogle.com/models/vldTQXnhJ/";
         let model, webcam, isLocked = false, currentClass = "";
-
-        // 从本地存储读取配置，如果没有则为空
         let localData = JSON.parse(localStorage.getItem('hardware_config') || '{}');
 
         async function init() {
-            model = await tmImage.load(URL + "model.json", URL + "metadata.json");
-            webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, false);
-            await webcam.setup({ facingMode: "environment" });
-            await webcam.play();
-            document.getElementById("webcam-container").appendChild(webcam.canvas);
-            window.requestAnimationFrame(loop);
+            try {
+                model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+                webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, flip = false);
+                await webcam.setup({ facingMode: "environment" });
+                await webcam.play();
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                window.requestAnimationFrame(loop);
+            } catch (e) {
+                document.getElementById("labelName").innerText = "加载失败，请检查HTTPS";
+            }
         }
 
         async function loop() {
@@ -106,19 +114,15 @@
             const prediction = await model.predict(webcam.canvas);
             let maxP = 0;
             let match = "";
-
             for (let i = 0; i < model.getTotalClasses(); i++) {
                 if (prediction[i].probability > maxP) {
                     maxP = prediction[i].probability;
                     match = prediction[i].className;
                 }
             }
-
             if (maxP > 0.90 && match !== "Background") {
                 document.getElementById("labelName").innerText = match;
                 document.getElementById("probTag").innerText = Math.round(maxP*100) + "%";
-                
-                // 自动锁定逻辑
                 currentClass = match;
                 lockResult();
             }
@@ -127,10 +131,8 @@
         function lockResult() {
             isLocked = true;
             const config = localData[currentClass] || { pos: "尚未配置位置", tag: currentClass };
-            
             document.getElementById("posText").innerText = config.pos;
             document.getElementById("printPreview").innerText = `名称：${config.tag}\n地址：${config.pos}`;
-            
             document.getElementById("result-panel").classList.add("locked");
             document.getElementById("actionArea").style.display = "block";
             if (navigator.vibrate) navigator.vibrate(50);
@@ -143,7 +145,6 @@
             document.getElementById("labelName").innerText = "识别中...";
         }
 
-        // 弹窗管理
         function openEditModal() {
             document.getElementById("modal-item-name").innerText = "正在配置：" + currentClass;
             const config = localData[currentClass] || { pos: "", tag: currentClass };
@@ -152,19 +153,15 @@
             document.getElementById("edit-modal").style.display = "block";
         }
 
-        function closeEditModal() {
-            document.getElementById("edit-modal").style.display = "none";
-        }
+        function closeEditModal() { document.getElementById("edit-modal").style.display = "none"; }
 
         function saveConfig() {
             const pos = document.getElementById("input-pos").value;
             const tag = document.getElementById("input-tag").value;
-            
             localData[currentClass] = { pos, tag };
             localStorage.setItem('hardware_config', JSON.stringify(localData));
-            
             closeEditModal();
-            lockResult(); // 刷新显示
+            lockResult();
         }
 
         function copyPrintContent() {
