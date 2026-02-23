@@ -2,70 +2,71 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>硬件分拣助手 v4.2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>硬件分拣助手 v4.3</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
-        :root { --primary: #00d1ff; --bg: #0f172a; --card: #1e293b; }
-        body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        :root { --primary: #00d1ff; --bg: #000; --card: rgba(30, 41, 59, 0.95); }
         
-        /* 1. 动态相机区域 */
-        #webcam-container { position: fixed; top: 0; left: 0; width: 100%; height: 60%; z-index: 1; }
+        /* 1. 全屏相机背景 */
+        body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; height: 100vh; overflow: hidden; }
+        #webcam-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         canvas { width: 100%; height: 100%; object-fit: cover; }
         
-        /* 2. 弹性 UI 区域 */
-        #ui-layer { position: relative; z-index: 2; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; }
+        /* 2. 悬浮 UI 层 */
+        #ui-layer { 
+            position: absolute; bottom: 0; left: 0; width: 100%; 
+            z-index: 2; display: flex; flex-direction: column; 
+            padding-bottom: env(safe-area-inset-bottom); /* 关键：适配全面屏底部 */
+        }
         
         #result-panel { 
-            background: var(--card); border-radius: 24px 24px 0 0; padding: 15px 20px 30px; 
-            border-top: 2px solid var(--primary); box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
-            max-height: 50vh; overflow-y: auto; /* 确保内容过多时可滚动，不遮挡按钮 */
+            margin: 15px; background: var(--card); border-radius: 20px; 
+            padding: 16px; border: 1px solid rgba(255,255,255,0.1); 
+            backdrop-filter: blur(10px); /* 磨砂玻璃效果 */
         }
 
-        .label-title { font-size: 1.4rem; font-weight: 800; color: #fff; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-        .guide-box { padding: 12px; background: rgba(0,0,0,0.3); border-radius: 12px; margin-bottom: 12px; border: 1px solid #334155; }
+        .label-title { font-size: 1.3rem; font-weight: bold; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .guide-box { padding: 10px; background: rgba(0,0,0,0.4); border-radius: 12px; margin-bottom: 12px; }
         
-        /* 进度条样式：显示盒子空间 */
-        .capacity-bar { height: 6px; background: #334155; border-radius: 3px; margin-top: 8px; overflow: hidden; }
-        .capacity-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.5s; }
+        .capacity-bar { height: 4px; background: #334155; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+        .capacity-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
 
-        .btn-group { display: flex; gap: 10px; padding-bottom: constant(safe-area-inset-bottom); padding-bottom: env(safe-area-inset-bottom); }
-        button { flex: 1; padding: 14px; border-radius: 12px; border: none; font-weight: 600; font-size: 1rem; }
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 12px; border-radius: 12px; border: none; font-weight: bold; font-size: 0.95rem; }
         .btn-main { background: var(--primary); color: #000; }
-        .btn-sub { background: #334155; color: #fff; }
+        .btn-sub { background: #444; color: #fff; }
 
-        /* 管理页适配 */
-        #rule-modal { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 20px; overflow-y: auto; }
-        .rule-item { background: #1e293b; padding: 12px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #444; }
-        input { width: 100%; padding: 10px; margin: 5px 0; background: #0f172a; border: 1px solid #444; color: #fff; border-radius: 8px; box-sizing: border-box; }
-        #version-tag { position: fixed; top: 10px; left: 10px; z-index: 100; font-size: 10px; color: #64748b; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 10px; }
+        #version-tag { position: fixed; top: 10px; left: 10px; z-index: 100; font-size: 10px; color: rgba(255,255,255,0.5); background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; }
+        
+        /* 管理页弹窗全屏覆盖 */
+        #rule-modal { display: none; position: fixed; inset: 0; background: #0f172a; z-index: 200; padding: 20px; overflow-y: auto; }
+        .rule-item { background: #1e293b; padding: 10px; border-radius: 12px; margin-bottom: 8px; border: 1px solid #444; }
+        input { width: 100%; padding: 8px; margin: 4px 0; background: #000; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box; }
     </style>
 </head>
 <body>
-    <div id="version-tag">VER: 4.2.20260223</div>
+    <div id="version-tag">VER: 4.3.20260223</div>
     <div id="webcam-container"></div>
 
     <div id="ui-layer">
         <div id="result-panel">
             <div class="label-title">
-                <span id="labelName">扫描中...</span>
-                <button onclick="openRules()" style="width:auto; padding:4px 10px; font-size:0.7rem; background:#334155; color:#fff;">⚙️ 配置规则</button>
+                <span id="labelName">等待物体...</span>
+                <button onclick="openRules()" style="width:auto; padding:4px 10px; font-size:0.7rem; background:rgba(255,255,255,0.1); color:#fff; border-radius:10px; border:1px solid #666;">⚙️ 规则设置</button>
             </div>
             
             <div class="guide-box">
-                <div style="font-size: 0.75rem; color: #94a3b8;">推荐放置位置：</div>
-                <div id="posText" style="font-size: 1.1rem; color: var(--primary); font-weight: bold; margin: 4px 0;">-</div>
-                <div style="font-size: 0.7rem; color: #64748b; display: flex; justify-content: space-between;">
-                    <span>盒子预估负载</span>
-                    <span id="capValue">0%</span>
-                </div>
+                <div style="font-size: 0.7rem; color: #aaa;">推荐位置及负载：</div>
+                <div id="posText" style="font-size: 1rem; color: var(--primary); font-weight: bold; margin: 2px 0;">-</div>
                 <div class="capacity-bar"><div id="capFill" class="capacity-fill"></div></div>
+                <div id="capValue" style="font-size: 0.6rem; color: #888; text-align: right; margin-top: 2px;">0/0</div>
             </div>
 
             <div id="actionArea" style="display: none;">
                 <div class="btn-group">
-                    <button class="btn-main" onclick="confirmAndCount()">确认存放并复制</button>
+                    <button class="btn-main" onclick="confirmAndCount()">确认归位</button>
                     <button class="btn-sub" onclick="resetLock()">重试</button>
                 </div>
             </div>
@@ -73,22 +74,17 @@
     </div>
 
     <div id="rule-modal">
-        <h3>分类与规划管理</h3>
-        <p style="font-size: 0.8rem; color: #94a3b8;">设置关键词及盒子最大容量 (单位:件)</p>
+        <h3 style="margin-top:0">分类规则管理</h3>
         <div id="rules-list"></div>
-        <button class="btn-main" onclick="addRule()" style="width:100%; margin-top:10px;">+ 添加分类</button>
+        <button class="btn-main" onclick="addRule()" style="width:100%; margin-top:10px;">+ 添加新分类</button>
         <button class="btn-sub" onclick="saveRules()" style="width:100%; margin-top:15px; background: var(--primary); color:#000;">保存设置</button>
+        <button class="btn-sub" onclick="document.getElementById('rule-modal').style.display='none'" style="width:100%; margin-top:10px;">取消</button>
     </div>
 
     <script>
         const URL = "https://teachablemachine.withgoogle.com/models/vldTQXnhJ/";
         let model, webcam, isLocked = false, currentMatchRule = null;
-        
-        // 增加“容量”属性：count为当前数量，limit为上限
-        let myRules = JSON.parse(localStorage.getItem('sorting_rules_v4')) || [
-            { name: "手机设备", keywords: "Phone,iPad", pos: "D区-01架", count: 0, limit: 5 },
-            { name: "电子元件", keywords: "STM32,Sensor", pos: "A区-03盒", count: 0, limit: 20 }
-        ];
+        let myRules = JSON.parse(localStorage.getItem('sorting_rules_v4')) || [];
 
         async function init() {
             model = await tmImage.load(URL + "model.json", URL + "metadata.json");
@@ -122,8 +118,6 @@
         function lockResult(name) {
             isLocked = true;
             document.getElementById("labelName").innerText = name;
-            
-            // 自动匹配并展示容量
             currentMatchRule = myRules.find(r => r.keywords.split(',').some(k => name.toLowerCase().includes(k.trim().toLowerCase())));
             
             if (currentMatchRule) {
@@ -131,9 +125,10 @@
                 let percent = Math.min(100, (currentMatchRule.count / currentMatchRule.limit) * 100);
                 document.getElementById("capFill").style.width = percent + "%";
                 document.getElementById("capValue").innerText = `${currentMatchRule.count} / ${currentMatchRule.limit}`;
-                if(percent >= 100) document.getElementById("posText").innerText += " (⚠️已满)";
             } else {
                 document.getElementById("posText").innerText = "未匹配分类";
+                document.getElementById("capFill").style.width = "0%";
+                document.getElementById("capValue").innerText = "0/0";
             }
             
             document.getElementById("actionArea").style.display = "block";
@@ -147,7 +142,7 @@
             }
             const txt = `名称：${document.getElementById("labelName").innerText}\n位置：${document.getElementById("posText").innerText}`;
             navigator.clipboard.writeText(txt).then(() => {
-                alert("已记录并复制标签！");
+                alert("已记入库存！");
                 resetLock();
             });
         }
@@ -155,23 +150,20 @@
         function resetLock() {
             isLocked = false;
             document.getElementById("actionArea").style.display = "none";
-            document.getElementById("labelName").innerText = "扫描中...";
-            document.getElementById("capFill").style.width = "0%";
+            document.getElementById("labelName").innerText = "正在扫描...";
         }
 
-        /* 规则管理逻辑 */
         function openRules() {
             const list = document.getElementById("rules-list");
             list.innerHTML = "";
             myRules.forEach((rule, i) => {
-                list.innerHTML += `
-                    <div class="rule-item">
-                        <input type="text" value="${rule.name}" onchange="myRules[${i}].name=this.value" placeholder="分类名">
-                        <input type="text" value="${rule.keywords}" onchange="myRules[${i}].keywords=this.value" placeholder="关键词(逗号隔开)">
-                        <input type="text" value="${rule.pos}" onchange="myRules[${i}].pos=this.value" placeholder="收纳地址">
-                        <input type="number" value="${rule.limit}" onchange="myRules[${i}].limit=parseInt(this.value)" placeholder="盒子容量上限">
-                        <button onclick="myRules.splice(${i},1);openRules()" style="color:#ff4444; background:none; border:none; font-size:12px;">删除</button>
-                    </div>`;
+                list.innerHTML += `<div class="rule-item">
+                    <input type="text" value="${rule.name}" onchange="myRules[${i}].name=this.value" placeholder="分类名">
+                    <input type="text" value="${rule.keywords}" onchange="myRules[${i}].keywords=this.value" placeholder="关键词">
+                    <input type="text" value="${rule.pos}" onchange="myRules[${i}].pos=this.value" placeholder="位置">
+                    <input type="number" value="${rule.limit}" onchange="myRules[${i}].limit=parseInt(this.value)" placeholder="上限">
+                    <button onclick="myRules.splice(${i},1);openRules()" style="color:#ff4444; background:none; border:none; font-size:10px;">删除</button>
+                </div>`;
             });
             document.getElementById("rule-modal").style.display = "block";
         }
